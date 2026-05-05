@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tinyworlds-viewer-scaffold"
+version = "0.1.0"
+description = "Lightweight Streamlit scaffold for visualizing the AlmondGod/tinyworlds HDF5 frame dataset."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "h5py>=3.11",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "pillow>=10.0",
+  "streamlit>=1.34",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.5",
+  "watchdog>=6.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

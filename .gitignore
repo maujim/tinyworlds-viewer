@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments / uv
+.venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Local env
+.env
+.env.*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Generated/package artifacts
+*.egg-info/
+
+# Generated or large local artifacts
+outputs/
+artifacts/
+exports/
+*.mp4
+*.gif
+*.h5
