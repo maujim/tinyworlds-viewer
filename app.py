@@ -114,10 +114,11 @@ total_pixels = int(sum(f.frame_count * f.width * f.height for f in dataset.files
 st.title("🕹️ TinyWorlds Explorer")
 st.caption("A readable, arcade-flavored dashboard for inspecting tiny game-world frame datasets.")
 
-with st.sidebar:
-    st.header("Global controls")
+control_cols = st.columns([1, 2])
+with control_cols[0]:
     world = st.selectbox("Selected world", worlds)
     file_info = dataset.get_file(world)
+with control_cols[1]:
     st.markdown("**Dataset root**")
     st.markdown(f'<div class="tw-path">{dataset.root}</div>', unsafe_allow_html=True)
 
