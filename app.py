@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import random
 from pathlib import Path
 
@@ -39,6 +40,50 @@ st.markdown(
         font-family: monospace;
         overflow-wrap: anywhere;
         font-size: .9rem;
+    }
+    [class*="st-key-atlas_cell_"] {
+        position: relative;
+    }
+    [class*="st-key-atlas_cell_"] [data-testid="stImage"] {
+        margin-bottom: 0;
+    }
+    [class*="st-key-atlas_cell_"] [data-testid="stImage"] img {
+        border-radius: 10px;
+        display: block;
+    }
+    [class*="st-key-atlas_cell_"] .stButton {
+        position: relative;
+        z-index: 5;
+        margin-top: -2.55rem;
+        margin-left: .25rem;
+        width: fit-content;
+    }
+    [class*="st-key-atlas_cell_"] .stButton button {
+        min-height: 1.75rem;
+        padding: .15rem .45rem;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.55);
+        background: rgba(0,0,0,.58);
+        color: white;
+        backdrop-filter: blur(6px);
+        font-size: .68rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,.35);
+    }
+    [class*="st-key-atlas_cell_"] .tw-atlas-label {
+        position: relative;
+        z-index: 4;
+        margin-top: -4.85rem;
+        margin-bottom: 2.45rem;
+        padding: .25rem .38rem;
+        width: fit-content;
+        max-width: calc(100% - .5rem);
+        border-radius: 8px;
+        background: rgba(0,0,0,.54);
+        color: white;
+        font-size: .64rem;
+        line-height: 1.15;
+        backdrop-filter: blur(6px);
+        pointer-events: none;
     }
     </style>
     """,
@@ -88,6 +133,26 @@ def label_for(index: int, max_index: int) -> str:
     return f"#{index:,} · {percent:04.1f}%"
 
 
+def atlas_cells(start: int, stop: int, k: int) -> list[dict[str, int]]:
+    """Split an inclusive frame interval into a deterministic K×K VideoAtlas grid."""
+    cells: list[dict[str, int]] = []
+    total = max(1, stop - start + 1)
+    cell_count = k * k
+    for i in range(cell_count):
+        cell_start = start + (i * total) // cell_count
+        cell_stop = start + (((i + 1) * total) // cell_count) - 1
+        cell_stop = max(cell_start, min(stop, cell_stop))
+        midpoint = (cell_start + cell_stop) // 2
+        cells.append({"cell": i, "start": cell_start, "stop": cell_stop, "midpoint": midpoint})
+    return cells
+
+
+def atlas_depth_for_path(frame_count: int, k: int) -> int:
+    if frame_count <= 1:
+        return 0
+    return math.ceil(math.log(frame_count, k * k))
+
+
 try:
     dataset = load_dataset()
 except Exception as exc:  # noqa: BLE001 - Streamlit should explain dataset setup problems
@@ -122,8 +187,8 @@ with control_cols[1]:
     st.markdown("**Dataset root**")
     st.markdown(f'<div class="tw-path">{dataset.root}</div>', unsafe_allow_html=True)
 
-overview_tab, sheet_tab, compare_tab, lab_tab = st.tabs(
-    ["Overview", "Contact Sheet", "Compare", "Frame Lab"]
+overview_tab, atlas_tab, sheet_tab, compare_tab, lab_tab = st.tabs(
+    ["Overview", "VideoAtlas", "Contact Sheet", "Compare", "Frame Lab"]
 )
 
 with overview_tab:
@@ -156,6 +221,96 @@ with overview_tab:
                 clamp=True,
                 width="stretch",
             )
+
+with atlas_tab:
+    st.subheader(f"VideoAtlas: {world}")
+    st.caption(
+        "Recursive K×K temporal grids. Each cell shows the midpoint frame for a contiguous "
+        "interval; expand a cell to zoom in by K² with no preprocessing."
+    )
+
+    max_index = file_info.frame_count - 1
+    atlas_key = f"video_atlas_path_{world}"
+    if atlas_key not in st.session_state:
+        st.session_state[atlas_key] = []
+
+    controls = st.columns([1, 1, 1, 2])
+    k = controls[0].slider(
+        "K",
+        2,
+        8,
+        8,
+        help="Grid side length. K=8 yields the paper-style 64-cell atlas.",
+    )
+    fps = controls[1].number_input(
+        "FPS",
+        min_value=0.1,
+        value=30.0,
+        step=1.0,
+        help="Used for time labels and Dmax. Frame intervals are exact regardless of FPS.",
+    )
+    scale_seconds = controls[2].toggle("Show seconds", value=True)
+    if controls[3].button("Reset to root grid"):
+        st.session_state[atlas_key] = []
+
+    path: list[int] = list(st.session_state[atlas_key])
+    interval_start, interval_stop = 0, max_index
+    for selected_cell in path:
+        selected = atlas_cells(interval_start, interval_stop, k)[selected_cell]
+        interval_start, interval_stop = selected["start"], selected["stop"]
+
+    depth = len(path)
+    dmax = atlas_depth_for_path(file_info.frame_count, k)
+    resolution_frames = max(1, math.ceil(file_info.frame_count / ((k * k) ** (depth + 1))))
+    resolution_seconds = resolution_frames / fps
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Depth", f"{depth}/{dmax}")
+    m2.metric("Current interval", f"#{interval_start:,}–#{interval_stop:,}")
+    m3.metric("Grid resolution", f"~{resolution_frames:,} frames")
+    m4.metric("Time resolution", f"~{resolution_seconds:.3f}s")
+
+    breadcrumb = "root" + "".join(f" → c{cell}" for cell in path)
+    st.markdown(f"**Address:** `{breadcrumb}`")
+    if path and st.button("← Collapse one level"):
+        st.session_state[atlas_key] = path[:-1]
+        st.rerun()
+
+    cells = atlas_cells(interval_start, interval_stop, k)
+    midpoints = tuple(cell["midpoint"] for cell in cells)
+    frames = cached_frames(world, midpoints)
+
+    st.write(f"Expand any cell in this {k}×{k} grid:")
+    for row in range(k):
+        cols = st.columns(k)
+        for col in range(k):
+            cell = cells[row * k + col]
+            frame = frames[row * k + col]
+            with cols[col]:
+                with st.container(key=f"atlas_cell_{world}_{depth}_{row}_{col}_{cell['start']}"):
+                    start_label = cell["start"] / fps if scale_seconds else cell["start"]
+                    stop_label = cell["stop"] / fps if scale_seconds else cell["stop"]
+                    unit = "s" if scale_seconds else "f"
+                    caption = (
+                        f"c{cell['cell']} · mid #{cell['midpoint']:,}<br>"
+                        f"[{start_label:.2f}, {stop_label:.2f}] {unit}"
+                        if scale_seconds
+                        else f"c{cell['cell']} · mid #{cell['midpoint']:,}<br>"
+                        f"[#{cell['start']:,}, #{cell['stop']:,}]"
+                    )
+                    st.image(frame, clamp=True, width="stretch")
+                    st.markdown(
+                        f'<div class="tw-atlas-label">{caption}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    disabled = cell["start"] >= cell["stop"]
+                    if st.button(
+                        "EXPAND",
+                        key=f"atlas_{world}_{depth}_{row}_{col}_{cell['start']}",
+                        disabled=disabled,
+                    ):
+                        st.session_state[atlas_key] = path + [cell["cell"]]
+                        st.rerun()
 
 with sheet_tab:
     st.subheader(f"{world} contact sheet")
